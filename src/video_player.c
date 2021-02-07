@@ -17,6 +17,7 @@
 
 /* Structure to contain all our information, so we can pass it around */
 typedef struct _CustomData {
+  GtkWidget *main_window;
   GstElement *playbin;           /* Our one and only pipeline */
 
   GtkWidget *slider;              /* Slider widget to keep track of current position */
@@ -146,6 +147,11 @@ static void keypress_cb (GtkWidget *widget, GdkEventKey *event, CustomData *data
         printf("Failed to get duration");
       }
       break;
+    case GDK_KEY_Escape:
+      gtk_window_unfullscreen(GTK_WINDOW(data->main_window));
+      break;
+    default:
+      break;
   }
 }
 
@@ -203,7 +209,9 @@ static void create_ui (CustomData *data) {
   gtk_window_set_default_size (GTK_WINDOW (main_window), 640, 480);
 
   gtk_window_fullscreen(GTK_WINDOW (main_window));
+
   gtk_widget_show_all (main_window);
+  data->main_window = main_window;
 }
 
 /* This function is called periodically to refresh the GUI */

@@ -13,6 +13,8 @@
 #include <gdk/gdkquartz.h>
 #endif
 
+#define SEEK_INTERVAL 30
+
 /* Structure to contain all our information, so we can pass it around */
 typedef struct _CustomData {
   GstElement *playbin;           /* Our one and only pipeline */
@@ -97,6 +99,7 @@ static void slider_cb (GtkRange *range, CustomData *data) {
 /* Function to recieve keypress events */
 static void keypress_cb (GtkWidget *widget, GdkEventKey *event, CustomData *data) {
   printf("Got keypress event\n");
+  gint64 current = -1;
   switch (event->keyval)
   {
     case GDK_KEY_space:
@@ -108,7 +111,40 @@ static void keypress_cb (GtkWidget *widget, GdkEventKey *event, CustomData *data
         gst_element_set_state (data->playbin, GST_STATE_PLAYING);
         printf("Play called; Current sate: %d", GST_STATE(data->playbin));
       }
+      break;
+    case GDK_KEY_Left:
+      /* TODO add  proper error handlin and update the seek bar properly, if it is not correct */
+      if (gst_element_query_position (data->playbin, GST_FORMAT_TIME, &current)) {
+        gst_element_seek_simple (data->playbin, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT,
+        (gint64)(current - ((SEEK_INTERVAL) * GST_SECOND)));
 
+        /* Block the "value-changed" signal, so the slider_cb function is not called
+         * (which would trigger a seek the user has not requested) */
+        g_signal_handler_block (data->slider, data->slider_update_signal_id);
+        /* Set the position of the slider to the current pipeline positoin, in SECONDS */
+        gtk_range_set_value (GTK_RANGE (data->slider), (gdouble)((current / GST_SECOND) - SEEK_INTERVAL));
+        /* Re-enable the signal */
+        g_signal_handler_unblock (data->slider, data->slider_update_signal_id);
+      } else {
+        printf("Failed to get duration");
+      }
+      break;
+    case GDK_KEY_Right:
+      /* TODO add  proper error handlin and update the seek bar properly, if it is not correct */
+      if (gst_element_query_position (data->playbin, GST_FORMAT_TIME, &current)) {
+        gst_element_seek_simple (data->playbin, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT,
+        (gint64)(current + ((SEEK_INTERVAL) * GST_SECOND)));
+
+        /* Block the "value-changed" signal, so the slider_cb function is not called
+         * (which would trigger a seek the user has not requested) */
+        g_signal_handler_block (data->slider, data->slider_update_signal_id);
+        /* Set the position of the slider to the current pipeline positoin, in SECONDS */
+        gtk_range_set_value (GTK_RANGE (data->slider), (gdouble)((current / GST_SECOND) + SEEK_INTERVAL));
+        /* Re-enable the signal */
+        g_signal_handler_unblock (data->slider, data->slider_update_signal_id);
+      } else {
+        printf("Failed to get duration");
+      }
       break;
   }
 }

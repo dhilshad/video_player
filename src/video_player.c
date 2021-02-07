@@ -13,7 +13,7 @@
 #include <gdk/gdkquartz.h>
 #endif
 
-#define SEEK_INTERVAL 30
+#define SEEK_INTERVAL 10
 
 /* Structure to contain all our information, so we can pass it around */
 typedef struct _CustomData {

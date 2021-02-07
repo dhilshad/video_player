@@ -94,6 +94,25 @@ static void slider_cb (GtkRange *range, CustomData *data) {
       (gint64)(value * GST_SECOND));
 }
 
+/* Function to recieve keypress events */
+static void keypress_cb (GtkWidget *widget, GdkEventKey *event, CustomData *data) {
+  printf("Got keypress event\n");
+  switch (event->keyval)
+  {
+    case GDK_KEY_space:
+      printf ("Space key\n");
+      if (GST_STATE_PLAYING == data->state) {
+        gst_element_set_state (data->playbin, GST_STATE_PAUSED);
+        printf("Pause called; Current sate: %d", GST_STATE(data->playbin));
+      } else if (GST_STATE_PAUSED == data->state) {
+        gst_element_set_state (data->playbin, GST_STATE_PLAYING);
+        printf("Play called; Current sate: %d", GST_STATE(data->playbin));
+      }
+
+      break;
+  }
+}
+
 /* This creates all the GTK+ widgets that compose our application, and registers the callbacks */
 static void create_ui (CustomData *data) {
   GtkWidget *main_window;  /* The uppermost window, containing all other windows */
@@ -123,6 +142,10 @@ static void create_ui (CustomData *data) {
   data->slider = gtk_scale_new_with_range (GTK_ORIENTATION_HORIZONTAL, 0, 100, 1);
   gtk_scale_set_draw_value (GTK_SCALE (data->slider), 0);
   data->slider_update_signal_id = g_signal_connect (G_OBJECT (data->slider), "value-changed", G_CALLBACK (slider_cb), data);
+
+  /* Listen for keypress events */
+  gtk_widget_add_events(main_window, GDK_KEY_PRESS_MASK);
+  g_signal_connect (G_OBJECT (main_window), "key_press_event", G_CALLBACK (keypress_cb), data);
 #if 0
   data->streams_list = gtk_text_view_new ();
   gtk_text_view_set_editable (GTK_TEXT_VIEW (data->streams_list), FALSE);

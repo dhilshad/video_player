@@ -155,6 +155,24 @@ static void keypress_cb (GtkWidget *widget, GdkEventKey *event, CustomData *data
   }
 }
 
+/*Function recieves click event on video window */
+gboolean video_screen_mouse_click_cb (GtkWidget *widget, GdkEventButton *event, CustomData *data) {
+  printf("Got mouse keyevent %d\n", event->type);
+
+  switch (event->type)
+  {
+    case GDK_2BUTTON_PRESS:
+      /*TODO: state machine for window size */
+      gtk_window_unfullscreen(GTK_WINDOW(data->main_window));
+      break;
+    default:
+      printf ("mouse click unhandled\n");
+      break;
+  }
+
+  return TRUE;
+}
+
 /* This creates all the GTK+ widgets that compose our application, and registers the callbacks */
 static void create_ui (CustomData *data) {
   GtkWidget *main_window;  /* The uppermost window, containing all other windows */
@@ -171,6 +189,8 @@ static void create_ui (CustomData *data) {
   gtk_widget_set_double_buffered (video_window, FALSE);
   g_signal_connect (video_window, "realize", G_CALLBACK (realize_cb), data);
   g_signal_connect (video_window, "draw", G_CALLBACK (draw_cb), data);
+  gtk_widget_add_events(video_window, GDK_BUTTON_PRESS_MASK);
+  g_signal_connect (video_window, "button-press-event", G_CALLBACK (video_screen_mouse_click_cb), data);
 
   play_button = gtk_button_new_from_icon_name ("media-playback-start", GTK_ICON_SIZE_SMALL_TOOLBAR);
   g_signal_connect (G_OBJECT (play_button), "clicked", G_CALLBACK (play_cb), data);

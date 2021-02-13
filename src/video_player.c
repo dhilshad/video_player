@@ -5,6 +5,8 @@
 #include <gst/video/videooverlay.h>
 #include <dbus/dbus.h>
 
+#include "log.h"
+
 #include <gdk/gdk.h>
 #if defined (GDK_WINDOWING_X11)
 #include <gdk/gdkx.h>
@@ -108,18 +110,18 @@ static void slider_cb (GtkRange *range, CustomData *data) {
 
 /* Function to recieve keypress events */
 static void keypress_cb (GtkWidget *widget, GdkEventKey *event, CustomData *data) {
-  printf("Got keypress event\n");
+  LOGD("Got keypress event");
   gint64 current = -1;
   switch (event->keyval)
   {
     case GDK_KEY_space:
-      printf ("Space key\n");
+      LOGD ("Space key");
       if (GST_STATE_PLAYING == data->state) {
         gst_element_set_state (data->playbin, GST_STATE_PAUSED);
-        printf("Pause called; Current sate: %d", GST_STATE(data->playbin));
+        LOGD("Pause called; Current sate: %d", GST_STATE(data->playbin));
       } else if (GST_STATE_PAUSED == data->state) {
         gst_element_set_state (data->playbin, GST_STATE_PLAYING);
-        printf("Play called; Current sate: %d", GST_STATE(data->playbin));
+        LOGD("Play called; Current sate: %d", GST_STATE(data->playbin));
       }
       break;
     case GDK_KEY_Left:
@@ -136,7 +138,7 @@ static void keypress_cb (GtkWidget *widget, GdkEventKey *event, CustomData *data
         /* Re-enable the signal */
         g_signal_handler_unblock (data->slider, data->slider_update_signal_id);
       } else {
-        printf("Failed to get duration");
+        LOGD("Failed to get duration");
       }
       break;
     case GDK_KEY_Right:
@@ -153,7 +155,7 @@ static void keypress_cb (GtkWidget *widget, GdkEventKey *event, CustomData *data
         /* Re-enable the signal */
         g_signal_handler_unblock (data->slider, data->slider_update_signal_id);
       } else {
-        printf("Failed to get duration");
+        LOGD("Failed to get duration");
       }
       break;
     case GDK_KEY_Escape:
@@ -166,7 +168,7 @@ static void keypress_cb (GtkWidget *widget, GdkEventKey *event, CustomData *data
 
 /*Function recieves click event on video window */
 gboolean video_screen_mouse_click_cb (GtkWidget *widget, GdkEventButton *event, CustomData *data) {
-  printf("Got mouse keyevent %d\n", event->type);
+  LOGD("Got mouse keyevent %d", event->type);
 
   switch (event->type)
   {
@@ -175,7 +177,7 @@ gboolean video_screen_mouse_click_cb (GtkWidget *widget, GdkEventButton *event, 
       gtk_window_unfullscreen(GTK_WINDOW(data->main_window));
       break;
     default:
-      printf ("mouse click unhandled\n");
+      LOGD ("mouse click unhandled");
       break;
   }
 
@@ -254,7 +256,7 @@ static gboolean refresh_ui (CustomData *data) {
   /* If we didn't know it yet, query the stream duration */
   if (!GST_CLOCK_TIME_IS_VALID (data->duration)) {
     if (!gst_element_query_duration (data->playbin, GST_FORMAT_TIME, &data->duration)) {
-      g_printerr ("Could not query current duration.\n");
+      g_printerr ("Could not query current duration.");
     } else {
       /* Set the range of the slider to the clip duration, in SECONDS */
       gtk_range_set_range (GTK_RANGE (data->slider), 0, (gdouble)data->duration / GST_SECOND);
@@ -289,8 +291,8 @@ static void error_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
 
   /* Print error details on the screen */
   gst_message_parse_error (msg, &err, &debug_info);
-  g_printerr ("Error received from element %s: %s\n", GST_OBJECT_NAME (msg->src), err->message);
-  g_printerr ("Debugging information: %s\n", debug_info ? debug_info : "none");
+  g_printerr ("Error received from element %s: %s", GST_OBJECT_NAME (msg->src), err->message);
+  g_printerr ("Debugging information: %s", debug_info ? debug_info : "none");
   g_clear_error (&err);
   g_free (debug_info);
 
@@ -301,7 +303,7 @@ static void error_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
 /* This function is called when an End-Of-Stream message is posted on the bus.
  * We just set the pipeline to READY (which stops playback) */
 static void eos_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
-  g_print ("End-Of-Stream reached.\n");
+  g_print ("End-Of-Stream reached.");
   gst_element_set_state (data->playbin, GST_STATE_READY);
 }
 
@@ -312,7 +314,7 @@ static void state_changed_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
   gst_message_parse_state_changed (msg, &old_state, &new_state, &pending_state);
   if (GST_MESSAGE_SRC (msg) == GST_OBJECT (data->playbin)) {
     data->state = new_state;
-    g_print ("State set to %s\n", gst_element_state_get_name (new_state));
+    g_print ("State set to %s", gst_element_state_get_name (new_state));
     if (old_state == GST_STATE_READY && new_state == GST_STATE_PAUSED) {
       /* For extra responsiveness, we refresh the GUI as soon as we reach the PAUSED state */
       refresh_ui (data);
@@ -418,7 +420,7 @@ static void application_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
 /* function to print dbus error */
 void print_dbus_error (char *str, DBusError error)
 {
-    printf ("%s: %s\n", str, error.message);
+    LOGD ("%s: %s", str, error.message);
     dbus_error_free (&error);
 }
 
@@ -436,42 +438,36 @@ void inhibit_cpu_sleep(CustomData *data, Bool enable) {
   DBusMessage *reply;
   unsigned int inhibitCookie = 255;
 
-  printf("Entered %s\n", __func__);
+  LOGD("Entered %s", __func__);
 
   if (enable) {
-    printf("going to inhibit cpu sleep\n");
+    LOGD("going to inhibit cpu sleep");
     request = dbus_message_new_method_call(SESSION_MANAGER_DBUS, SESSION_MANAGER_DBUS_PATH,
                              SESSION_MANAGER_DBUS_INTERFACE, SESSION_MANAGER_INHIBIT);
     if (NULL == request) {
-      printf("Error in creating dbus method\n");
+      LOGD("Error in creating dbus method");
       goto Exit;
     }
-    printf("request created\n");
     dbus_message_iter_init_append (request, &iter);
-    printf("request created0\n");
     char *ptr = appName;
 
     if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_STRING, &ptr))) {
-      printf("Error adding appilcation name %d\n", __LINE__);
+      LOGD("Error adding appilcation name %d", __LINE__);
       goto Exit;
     }
-    printf("request created:1 \n");
     if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_UINT32 , &windowId))) {
-      printf("Error adding window id %d\n", __LINE__);
+      LOGD("Error adding window id %d", __LINE__);
       goto Exit;
     }
-    printf("request created: 2\n");
     char *ptr2 = reason;
     if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_STRING, &ptr2))) {
-      printf("Error adding reason %d\n", __LINE__);
+      LOGD("Error adding reason %d", __LINE__);
       goto Exit;
     }
-    printf("request created: 3 \n");
     if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_UINT32, &flag))) {
-      printf("Error adding flag %d\n", __LINE__);
+      LOGD("Error adding flag %d", __LINE__);
       goto Exit;
     }
-    printf("request created: 4\n");
 
   } else {
     request = dbus_message_new_method_call(SESSION_MANAGER_DBUS, SESSION_MANAGER_DBUS_PATH,
@@ -479,30 +475,20 @@ void inhibit_cpu_sleep(CustomData *data, Bool enable) {
   }
 
   if (!dbus_connection_send_with_reply (data->sessionBus, request, &pendingReturn, -1)) {
-    printf ("Error in dbus_connection_send_with_reply\n");
+    LOGD ("Error in dbus_connection_send_with_reply");
     goto Exit;
   }
-    printf("Send method call\n");
 
   if (pendingReturn == NULL) {
-    printf ("pending return is NULL\n");
+    LOGD ("pending return is NULL");
     goto Exit;
   }
-  printf("going to bloack on call\n");
-
 
   dbus_pending_call_block (pendingReturn);
   if ((reply = dbus_pending_call_steal_reply (pendingReturn)) == NULL) {
-    printf ("Error in dbus_pending_call_steal_reply\n");
+    LOGD ("Error in dbus_pending_call_steal_reply");
     goto Exit;
   }
-
-#if 0
-  /* read the reply */
-  if (dbus_message_get_args (reply, &dbusError, DBUS_TYPE_UINT32, &inhibitCookie, DBUS_TYPE_INVALID)) {
-    printf ("reply value :%u\n", inhibitCookie);
-  }
-#endif
 
 Exit:
   if (NULL != request) {
@@ -511,7 +497,7 @@ Exit:
   if (NULL != pendingReturn) {
     dbus_pending_call_unref	(pendingReturn);
   }
-  printf("Returning %s\n", __func__);
+  LOGD("Returning %s", __func__);
   return;
 }
 
@@ -526,7 +512,7 @@ int main(int argc, char *argv[]) {
 
   /* Initialize GStreamer */
   gst_init (&argc, &argv);
-  printf("Going to play:%s\n", argv[1]);
+  LOGD("Going to play:%s", argv[1]);
 
   /* Initialize our data structure */
   memset (&data, 0, sizeof (data));
@@ -536,7 +522,7 @@ int main(int argc, char *argv[]) {
   data.playbin = gst_element_factory_make ("playbin", "playbin");
 
   if (!data.playbin) {
-    g_printerr ("Not all elements could be created.\n");
+    g_printerr ("Not all elements could be created.");
     return -1;
   }
 
@@ -554,7 +540,7 @@ int main(int argc, char *argv[]) {
   /* initiate a dbus connection to session bus */
   data.sessionBus = dbus_bus_get (DBUS_BUS_SESSION, &dbusError);
   if (dbus_error_is_set (&dbusError) || !(data.sessionBus)) {
-    print_dbus_error("error in Dbus connection\n", dbusError);
+    print_dbus_error("error in Dbus connection", dbusError);
   } else {
     inhibit_cpu_sleep(&data, True);
   }
@@ -572,7 +558,7 @@ int main(int argc, char *argv[]) {
   /* Start playing */
   ret = gst_element_set_state (data.playbin, GST_STATE_PLAYING);
   if (ret == GST_STATE_CHANGE_FAILURE) {
-    g_printerr ("Unable to set the pipeline to the playing state.\n");
+    g_printerr ("Unable to set the pipeline to the playing state.");
     gst_object_unref (data.playbin);
     return -1;
   }

@@ -1,5 +1,7 @@
 PROJECT_DIR = $(CURDIR)
 SRC_FILES := $(wildcard $(PROJECT_DIR)/src/*.c)
+INC_FILES := $(wildcard $(PROJECT_DIR)/inc/*.h)
+INC_FOLDER := $(PROJECT_DIR)/inc/
 TARGET = vd_player
 
 CC = gcc
@@ -11,10 +13,10 @@ all: $(SRC_FILES)
 	@echo "Build starting.."
 	$(CC) -o $(TARGET) 
 
-$(TARGET): $(SRC_FILES)
+$(TARGET): $(SRC_FILES) $(INC_FILES)
 	@echo "Building Video PLayer"
 	@echo $(SRC_FILES)
-	$(CC) -o $@ $^ $(CFLAGS)
+	$(CC) -o $@ $^ -I$(INC_FOLDER) $(CFLAGS)
 
 clean:
 	rm $(TARGET)

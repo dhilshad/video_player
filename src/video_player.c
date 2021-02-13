@@ -3,6 +3,7 @@
 #include <gtk/gtk.h>
 #include <gst/gst.h>
 #include <gst/video/videooverlay.h>
+#include <dbus/dbus.h>
 
 #include <gdk/gdk.h>
 #if defined (GDK_WINDOWING_X11)
@@ -14,10 +15,16 @@
 #endif
 
 #define SEEK_INTERVAL 10
+#define SESSION_MANAGER_DBUS "org.gnome.SessionManager"
+#define SESSION_MANAGER_DBUS_PATH "/org/gnome/SessionManager"
+#define SESSION_MANAGER_DBUS_INTERFACE "org.gnome.SessionManager"
+#define SESSION_MANAGER_INHIBIT "Inhibit"
+#define SESSION_MANAGER_UNINHIBIT "Uninhibit"
+#define APPLICATION_NAME "vdplayer"
 
 /* Structure to contain all our information, so we can pass it around */
 typedef struct _CustomData {
-  GtkWidget *main_window;
+  GtkWidget *main_window;        /* Reference to main video wondow */
   GstElement *playbin;           /* Our one and only pipeline */
 
   GtkWidget *slider;              /* Slider widget to keep track of current position */
@@ -26,6 +33,8 @@ typedef struct _CustomData {
 
   GstState state;                 /* Current state of the pipeline */
   gint64 duration;                /* Duration of the clip, in nanoseconds */
+
+  DBusConnection *sessionBus;     /* Dbus connection to session bus */
 } CustomData;
 
 /* This function is called when the GUI toolkit creates the physical window that will hold the video.
@@ -406,17 +415,118 @@ static void application_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
   }
 }
 
+/* function to print dbus error */
+void print_dbus_error (char *str, DBusError error)
+{
+    printf ("%s: %s\n", str, error.message);
+    dbus_error_free (&error);
+}
+
+/*Function to inhibit cpu sleep */
+void inhibit_cpu_sleep(CustomData *data, Bool enable) {
+
+  DBusError dbusError;
+  DBusMessage *request;
+  DBusMessageIter iter;
+  int windowId = 0;
+  char appName[10] = "vd_palyer";
+  char reason[30] = "my video player is running";
+  int flag = 8;
+  DBusPendingCall *pendingReturn;
+  DBusMessage *reply;
+  unsigned int inhibitCookie = 255;
+
+  printf("Entered %s\n", __func__);
+
+  if (enable) {
+    printf("going to inhibit cpu sleep\n");
+    request = dbus_message_new_method_call(SESSION_MANAGER_DBUS, SESSION_MANAGER_DBUS_PATH,
+                             SESSION_MANAGER_DBUS_INTERFACE, SESSION_MANAGER_INHIBIT);
+    if (NULL == request) {
+      printf("Error in creating dbus method\n");
+      goto Exit;
+    }
+    printf("request created\n");
+    dbus_message_iter_init_append (request, &iter);
+    printf("request created0\n");
+    char *ptr = appName;
+
+    if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_STRING, &ptr))) {
+      printf("Error adding appilcation name %d\n", __LINE__);
+      goto Exit;
+    }
+    printf("request created:1 \n");
+    if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_UINT32 , &windowId))) {
+      printf("Error adding window id %d\n", __LINE__);
+      goto Exit;
+    }
+    printf("request created: 2\n");
+    char *ptr2 = reason;
+    if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_STRING, &ptr2))) {
+      printf("Error adding reason %d\n", __LINE__);
+      goto Exit;
+    }
+    printf("request created: 3 \n");
+    if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_UINT32, &flag))) {
+      printf("Error adding flag %d\n", __LINE__);
+      goto Exit;
+    }
+    printf("request created: 4\n");
+
+  } else {
+    request = dbus_message_new_method_call(SESSION_MANAGER_DBUS, SESSION_MANAGER_DBUS_PATH,
+                           SESSION_MANAGER_DBUS_INTERFACE, SESSION_MANAGER_UNINHIBIT);
+  }
+
+  if (!dbus_connection_send_with_reply (data->sessionBus, request, &pendingReturn, -1)) {
+    printf ("Error in dbus_connection_send_with_reply\n");
+    goto Exit;
+  }
+    printf("Send method call\n");
+
+  if (pendingReturn == NULL) {
+    printf ("pending return is NULL\n");
+    goto Exit;
+  }
+  printf("going to bloack on call\n");
+
+
+  dbus_pending_call_block (pendingReturn);
+  if ((reply = dbus_pending_call_steal_reply (pendingReturn)) == NULL) {
+    printf ("Error in dbus_pending_call_steal_reply\n");
+    goto Exit;
+  }
+
+#if 0
+  /* read the reply */
+  if (dbus_message_get_args (reply, &dbusError, DBUS_TYPE_UINT32, &inhibitCookie, DBUS_TYPE_INVALID)) {
+    printf ("reply value :%u\n", inhibitCookie);
+  }
+#endif
+
+Exit:
+  if (NULL != request) {
+    dbus_message_unref (request);
+  }
+  if (NULL != pendingReturn) {
+    dbus_pending_call_unref	(pendingReturn);
+  }
+  printf("Returning %s\n", __func__);
+  return;
+}
+
 int main(int argc, char *argv[]) {
   CustomData data;
   GstStateChangeReturn ret;
   GstBus *bus;
+  DBusError dbusError;
 
   /* Initialize GTK */
   gtk_init (&argc, &argv);
 
   /* Initialize GStreamer */
   gst_init (&argc, &argv);
-  printf("Going to play:%s", argv[1]);
+  printf("Going to play:%s\n", argv[1]);
 
   /* Initialize our data structure */
   memset (&data, 0, sizeof (data));
@@ -441,6 +551,15 @@ int main(int argc, char *argv[]) {
   /* Create the GUI */
   create_ui (&data);
 
+  /* initiate a dbus connection to session bus */
+  data.sessionBus = dbus_bus_get (DBUS_BUS_SESSION, &dbusError);
+  if (dbus_error_is_set (&dbusError) || !(data.sessionBus)) {
+    print_dbus_error("error in Dbus connection\n", dbusError);
+  } else {
+    inhibit_cpu_sleep(&data, True);
+  }
+
+
   /* Instruct the bus to emit signals for each received message, and connect to the interesting signals */
   bus = gst_element_get_bus (data.playbin);
   gst_bus_add_signal_watch (bus);
@@ -463,6 +582,9 @@ int main(int argc, char *argv[]) {
 
   /* Start the GTK main loop. We will not regain control until gtk_main_quit is called. */
   gtk_main ();
+
+  /* remove dbus coneciton to session bus */
+  dbus_connection_flush (data.sessionBus);
 
   /* Free resources */
   gst_element_set_state (data.playbin, GST_STATE_NULL);

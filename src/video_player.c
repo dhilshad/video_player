@@ -37,7 +37,119 @@ typedef struct _CustomData {
   gint64 duration;                /* Duration of the clip, in nanoseconds */
 
   DBusConnection *sessionBus;     /* Dbus connection to session bus */
+
+  Bool isSleepInhibited;         /* Represents whether session manager sleep is inhibited or not */
+  unsigned int dbusInbitCookie;  /* Cookie got while calling sleep inhibit function to session manager.
+                                    used for calling uninhibit sleep */
 } CustomData;
+
+/*Function to inhibit cpu sleep. Also used for setting cpu sleep back on */
+void inhibit_cpu_sleep(CustomData *data, Bool enable) {
+
+  DBusError dbusError;
+  DBusMessage *request;
+  DBusMessageIter reqIter;
+  DBusMessageIter replyIter;
+  int windowId = 0;
+  char *appName = APPLICATION_NAME;
+  char *reason = "my video player is running";
+  int flag = 8; /* 8: to stop session being marked as idle */
+  DBusPendingCall *pendingReturn;
+  DBusMessage *reply;
+  unsigned int inhibitCookie = 0;
+
+  LOGD("Entered %s", __func__);
+
+  if (enable) {
+    LOGD("Going to inhibit cpu sleep");
+    request = dbus_message_new_method_call(SESSION_MANAGER_DBUS, SESSION_MANAGER_DBUS_PATH,
+                             SESSION_MANAGER_DBUS_INTERFACE, SESSION_MANAGER_INHIBIT);
+    if (NULL == request) {
+      LOGD("Error in creating dbus method");
+      goto Exit;
+    }
+    dbus_message_iter_init_append (request, &reqIter);
+
+    if (!(dbus_message_iter_append_basic (&reqIter, DBUS_TYPE_STRING, &appName))) {
+      LOGD("Error adding appilcation name %d", __LINE__);
+      goto Exit;
+    }
+    if (!(dbus_message_iter_append_basic (&reqIter, DBUS_TYPE_UINT32 , &windowId))) {
+      LOGD("Error adding window id %d", __LINE__);
+      goto Exit;
+    }
+    if (!(dbus_message_iter_append_basic (&reqIter, DBUS_TYPE_STRING, &reason))) {
+      LOGD("Error adding reason %d", __LINE__);
+      goto Exit;
+    }
+    if (!(dbus_message_iter_append_basic (&reqIter, DBUS_TYPE_UINT32, &flag))) {
+      LOGD("Error adding flag %d", __LINE__);
+      goto Exit;
+    }
+
+  } else {
+    LOGD("Enabling CPU sleep");
+    request = dbus_message_new_method_call(SESSION_MANAGER_DBUS, SESSION_MANAGER_DBUS_PATH,
+                           SESSION_MANAGER_DBUS_INTERFACE, SESSION_MANAGER_UNINHIBIT);
+    if (NULL == request) {
+      LOGD("Error in creating dbus method");
+      goto Exit;
+    }
+    dbus_message_iter_init_append (request, &reqIter);
+    if (!(dbus_message_iter_append_basic (&reqIter, DBUS_TYPE_UINT32, &(data->dbusInbitCookie)))) {
+      LOGD("Error adding inhibit cookie");
+      goto Exit;
+    }
+  }
+
+  if (!dbus_connection_send_with_reply (data->sessionBus, request, &pendingReturn, -1)) {
+    LOGD ("Error in dbus_connection_send_with_reply");
+    goto Exit;
+  }
+
+  if (pendingReturn == NULL) {
+    LOGD ("pending return is NULL");
+    goto Exit;
+  }
+
+  dbus_pending_call_block (pendingReturn);
+  if ((reply = dbus_pending_call_steal_reply (pendingReturn)) == NULL) {
+    LOGD ("Error in dbus_pending_call_steal_reply");
+    goto Exit;
+  }
+
+  /* parse reply according to inbit/unhibit method called */
+  if (enable) {
+    if (dbus_message_iter_init(reply, &replyIter)) {
+      if (DBUS_TYPE_UINT32 == dbus_message_iter_get_arg_type(&replyIter)) {
+        dbus_message_iter_get_basic(&replyIter, &(data->dbusInbitCookie));
+        LOGD("Got inhibit cookie:%d",data->dbusInbitCookie);
+
+      } else {
+        LOGD("inhibit return type is not as expected\n");
+        goto Exit;
+      }
+    } else {
+      LOGD ("Error in creating reply iterator");
+      goto Exit;
+    }
+    data->isSleepInhibited = True;
+
+  } else {
+    /* TODO parse the unhibit command here */
+    data->isSleepInhibited = False;
+  }
+
+Exit:
+  if (NULL != request) {
+    dbus_message_unref (request);
+  }
+  if (NULL != pendingReturn) {
+    dbus_pending_call_unref	(pendingReturn);
+  }
+  LOGD("Returning %s", __func__);
+  return;
+}
 
 /* This function is called when the GUI toolkit creates the physical window that will hold the video.
  * At this point we can retrieve its handler (which has a different meaning depending on the windowing system)
@@ -314,10 +426,20 @@ static void state_changed_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
   gst_message_parse_state_changed (msg, &old_state, &new_state, &pending_state);
   if (GST_MESSAGE_SRC (msg) == GST_OBJECT (data->playbin)) {
     data->state = new_state;
-    g_print ("State set to %s", gst_element_state_get_name (new_state));
+    LOGD ("State set to %s", gst_element_state_get_name (new_state));
     if (old_state == GST_STATE_READY && new_state == GST_STATE_PAUSED) {
       /* For extra responsiveness, we refresh the GUI as soon as we reach the PAUSED state */
       refresh_ui (data);
+    }
+
+    if (data->isSleepInhibited && GST_STATE_PAUSED == new_state) {
+      /* Let him sleep */
+      inhibit_cpu_sleep (data, False);
+
+    } else if (!(data->isSleepInhibited) && GST_STATE_PLAYING == new_state) {
+      /* Inhibit the sleep here */
+      inhibit_cpu_sleep (data, True);
+
     }
   }
 }
@@ -420,85 +542,8 @@ static void application_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
 /* function to print dbus error */
 void print_dbus_error (char *str, DBusError error)
 {
-    LOGD ("%s: %s", str, error.message);
-    dbus_error_free (&error);
-}
-
-/*Function to inhibit cpu sleep */
-void inhibit_cpu_sleep(CustomData *data, Bool enable) {
-
-  DBusError dbusError;
-  DBusMessage *request;
-  DBusMessageIter iter;
-  int windowId = 0;
-  char appName[10] = "vd_palyer";
-  char reason[30] = "my video player is running";
-  int flag = 8;
-  DBusPendingCall *pendingReturn;
-  DBusMessage *reply;
-  unsigned int inhibitCookie = 255;
-
-  LOGD("Entered %s", __func__);
-
-  if (enable) {
-    LOGD("going to inhibit cpu sleep");
-    request = dbus_message_new_method_call(SESSION_MANAGER_DBUS, SESSION_MANAGER_DBUS_PATH,
-                             SESSION_MANAGER_DBUS_INTERFACE, SESSION_MANAGER_INHIBIT);
-    if (NULL == request) {
-      LOGD("Error in creating dbus method");
-      goto Exit;
-    }
-    dbus_message_iter_init_append (request, &iter);
-    char *ptr = appName;
-
-    if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_STRING, &ptr))) {
-      LOGD("Error adding appilcation name %d", __LINE__);
-      goto Exit;
-    }
-    if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_UINT32 , &windowId))) {
-      LOGD("Error adding window id %d", __LINE__);
-      goto Exit;
-    }
-    char *ptr2 = reason;
-    if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_STRING, &ptr2))) {
-      LOGD("Error adding reason %d", __LINE__);
-      goto Exit;
-    }
-    if (!(dbus_message_iter_append_basic (&iter, DBUS_TYPE_UINT32, &flag))) {
-      LOGD("Error adding flag %d", __LINE__);
-      goto Exit;
-    }
-
-  } else {
-    request = dbus_message_new_method_call(SESSION_MANAGER_DBUS, SESSION_MANAGER_DBUS_PATH,
-                           SESSION_MANAGER_DBUS_INTERFACE, SESSION_MANAGER_UNINHIBIT);
-  }
-
-  if (!dbus_connection_send_with_reply (data->sessionBus, request, &pendingReturn, -1)) {
-    LOGD ("Error in dbus_connection_send_with_reply");
-    goto Exit;
-  }
-
-  if (pendingReturn == NULL) {
-    LOGD ("pending return is NULL");
-    goto Exit;
-  }
-
-  dbus_pending_call_block (pendingReturn);
-  if ((reply = dbus_pending_call_steal_reply (pendingReturn)) == NULL) {
-    LOGD ("Error in dbus_pending_call_steal_reply");
-    goto Exit;
-  }
-
-Exit:
-  if (NULL != request) {
-    dbus_message_unref (request);
-  }
-  if (NULL != pendingReturn) {
-    dbus_pending_call_unref	(pendingReturn);
-  }
-  LOGD("Returning %s", __func__);
-  return;
+  LOGD ("%s: %s", str, error.message);
+  dbus_error_free (&error);
 }
 
 int main(int argc, char *argv[]) {

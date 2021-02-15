@@ -539,6 +539,21 @@ static void application_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
   }
 }
 
+/* Callback function which will be invoked when a new element is added
+   to playbin */
+static void element_setup_cb (GstElement *playbin, GstElement *element,  CustomData *data) {
+
+  char *elemName = gst_element_get_name(element);
+  char *renderer = "renderer";
+
+  /* renderer is used for overlaying subtitle over text. Add property to add backround to subtitle */
+  if (!strncmp(elemName, renderer, 8)) {
+    LOGD("Setting property of text overlay renderer");
+    g_object_set(G_OBJECT(element), "shaded-background", True, NULL);
+  }
+
+}
+
 /* function to print dbus error */
 void print_dbus_error (char *str, DBusError error)
 {
@@ -578,6 +593,7 @@ int main(int argc, char *argv[]) {
   g_signal_connect (G_OBJECT (data.playbin), "video-tags-changed", (GCallback) tags_cb, &data);
   g_signal_connect (G_OBJECT (data.playbin), "audio-tags-changed", (GCallback) tags_cb, &data);
   g_signal_connect (G_OBJECT (data.playbin), "text-tags-changed", (GCallback) tags_cb, &data);
+  g_signal_connect (G_OBJECT (data.playbin), "element-setup", (GCallback) element_setup_cb, &data);
 
   /* Create the GUI */
   create_ui (&data);

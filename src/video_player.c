@@ -368,7 +368,7 @@ static gboolean refresh_ui (CustomData *data) {
   /* If we didn't know it yet, query the stream duration */
   if (!GST_CLOCK_TIME_IS_VALID (data->duration)) {
     if (!gst_element_query_duration (data->playbin, GST_FORMAT_TIME, &data->duration)) {
-      g_printerr ("Could not query current duration.");
+      LOGD ("Could not query current duration.");
     } else {
       /* Set the range of the slider to the clip duration, in SECONDS */
       gtk_range_set_range (GTK_RANGE (data->slider), 0, (gdouble)data->duration / GST_SECOND);
@@ -403,8 +403,8 @@ static void error_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
 
   /* Print error details on the screen */
   gst_message_parse_error (msg, &err, &debug_info);
-  g_printerr ("Error received from element %s: %s", GST_OBJECT_NAME (msg->src), err->message);
-  g_printerr ("Debugging information: %s", debug_info ? debug_info : "none");
+  LOGD ("Error received from element %s: %s", GST_OBJECT_NAME (msg->src), err->message);
+  LOGD ("Debugging information: %s", debug_info ? debug_info : "none");
   g_clear_error (&err);
   g_free (debug_info);
 
@@ -415,7 +415,7 @@ static void error_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
 /* This function is called when an End-Of-Stream message is posted on the bus.
  * We just set the pipeline to READY (which stops playback) */
 static void eos_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
-  g_print ("End-Of-Stream reached.");
+  LOGD ("End-Of-Stream reached.");
   gst_element_set_state (data->playbin, GST_STATE_READY);
 }
 
@@ -582,7 +582,7 @@ int main(int argc, char *argv[]) {
   data.playbin = gst_element_factory_make ("playbin", "playbin");
 
   if (!data.playbin) {
-    g_printerr ("Not all elements could be created.");
+    LOGD ("Not all elements could be created.");
     return -1;
   }
 
@@ -619,7 +619,7 @@ int main(int argc, char *argv[]) {
   /* Start playing */
   ret = gst_element_set_state (data.playbin, GST_STATE_PLAYING);
   if (ret == GST_STATE_CHANGE_FAILURE) {
-    g_printerr ("Unable to set the pipeline to the playing state.");
+    LOGD ("Unable to set the pipeline to the playing state.");
     gst_object_unref (data.playbin);
     return -1;
   }

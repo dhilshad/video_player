@@ -561,11 +561,51 @@ void print_dbus_error (char *str, DBusError error)
   dbus_error_free (&error);
 }
 
+/* This function will get the video uri from the uri passed by the user
+   For instance, if the uri is youtube link, this will get the vide uri
+   from youtube link, so that gstreamer can play the file */
+void get_video_uri(char *inputUri, char **opVideoUri) {
+  LOGD("Entered with i/p:%p o/p:%p", inputUri, opVideoUri);
+  char *videoUri = (char *)malloc (4096 * sizeof(char));
+  int ipUriSize = strlen(inputUri);
+
+  /* check whether the uri is a youtube link */
+  if (NULL != strstr(inputUri, "https")) {
+    if (NULL != strstr(inputUri, "youtube") || NULL != strstr(inputUri, "youtu.be")) {
+      LOGD("That's possibly a youtube link");
+      char command[4500] = "youtube-dl --format best[ext=mp4] --get-url ";
+      char tmpCmdTail[100] = " > /tmp/youtube_video_uri.txt";
+      int cmdSize = strlen (command);
+      FILE *tmpVideoUrifile;
+      memcpy(&command[cmdSize], inputUri, strlen(inputUri));
+      cmdSize = cmdSize + ipUriSize;
+      memcpy(&command[cmdSize], tmpCmdTail, 100);
+      cmdSize += 100;
+      system(command);
+
+      /* the video url will be written to /tmp/youtube_video_uri.txt. Read from there */
+      tmpVideoUrifile = fopen("/tmp/youtube_video_uri.txt", "r");
+      if (NULL == tmpVideoUrifile) {
+        LOGD(" Couldn't open file");
+      }
+      int size = fread(videoUri, 1024, 4, tmpVideoUrifile);
+      *opVideoUri = videoUri;
+    } else {
+
+    }
+  } else {
+    /* Assume that the passed uri is playable by playbin */
+    *opVideoUri = inputUri;
+  }
+  LOGD("Exiting");
+}
+
 int main(int argc, char *argv[]) {
   CustomData data;
   GstStateChangeReturn ret;
   GstBus *bus;
   DBusError dbusError;
+  char *fileUri = NULL;
 
   /* Initialize GTK */
   gtk_init (&argc, &argv);
@@ -586,8 +626,10 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
+  get_video_uri(argv[1], &fileUri);
+  LOGD("Got Video URI: %s", fileUri);
   /* Set the URI to play */
-  g_object_set (data.playbin, "uri", argv[1], NULL);
+  g_object_set (data.playbin, "uri", fileUri, NULL);
 
   /* Connect to interesting signals in playbin */
   g_signal_connect (G_OBJECT (data.playbin), "video-tags-changed", (GCallback) tags_cb, &data);

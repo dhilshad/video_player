@@ -8,13 +8,7 @@
 #include "log.h"
 
 #include <gdk/gdk.h>
-#if defined (GDK_WINDOWING_X11)
 #include <gdk/gdkx.h>
-#elif defined (GDK_WINDOWING_WIN32)
-#include <gdk/gdkwin32.h>
-#elif defined (GDK_WINDOWING_QUARTZ)
-#include <gdk/gdkquartz.h>
-#endif
 
 #define SEEK_INTERVAL 10
 #define SESSION_MANAGER_DBUS "org.gnome.SessionManager"
@@ -152,8 +146,7 @@ Exit:
 }
 
 /* This function is called when the GUI toolkit creates the physical window that will hold the video.
- * At this point we can retrieve its handler (which has a different meaning depending on the windowing system)
- * and pass it to GStreamer through the VideoOverlay interface. */
+ * At this point we can retrieve its handler and pass it to GStreamer through the VideoOverlay interface. */
 static void realize_cb (GtkWidget *widget, CustomData *data) {
   GdkWindow *window = gtk_widget_get_window (widget);
   guintptr window_handle;
@@ -161,15 +154,9 @@ static void realize_cb (GtkWidget *widget, CustomData *data) {
   if (!gdk_window_ensure_native (window))
     g_error ("Couldn't create native window needed for GstVideoOverlay!");
 
-  /* Retrieve window handler from GDK */
-#if defined (GDK_WINDOWING_WIN32)
-  window_handle = (guintptr)GDK_WINDOW_HWND (window);
-#elif defined (GDK_WINDOWING_QUARTZ)
-  window_handle = gdk_quartz_window_get_nsview (window);
-#elif defined (GDK_WINDOWING_X11)
+  /* Retrieve window handler from GDK.Pass it to playbin, which implements VideoOverlay
+     and will forward it to the video sink */
   window_handle = GDK_WINDOW_XID (window);
-#endif
-  /* Pass it to playbin, which implements VideoOverlay and will forward it to the video sink */
   gst_video_overlay_set_window_handle (GST_VIDEO_OVERLAY (data->playbin), window_handle);
 }
 
